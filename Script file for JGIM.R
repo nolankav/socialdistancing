@@ -1,6 +1,6 @@
-# County determinants of engagement in social distancing for COVID-19
+# County-level determinants of engagement in social distancing for COVID-19
 # N.M. Kavanagh, R.R. Goel, A.S. Venkataramani
-# May 21, 2020
+# September 9, 2020
 
 # Please direct questions about this script file to nolan.kavanagh@pennmedicine.upenn.edu.
 
@@ -28,14 +28,14 @@ library(zoo)         # Analysis tools
 setwd("/Users/nolankavanagh/Dropbox/COVID projects/")
 
 # Set maximum date
-MAX_DATE <- as.Date("2020-07-26")
+MAX_DATE <- as.Date("2020-08-30")
 
 ##############################################################################
 # Social distancing dataset
 ##############################################################################
 
 # Read dataset into R
-social <- read.csv("/Users/nolankavanagh/Dropbox/COVID projects/Datasets/US SDS-2020-08-05-sds-v3-full-county.csv")
+social <- read.csv("/Users/nolankavanagh/Dropbox/COVID projects/Datasets/US SDS-2020-09-08-sds-v3-full-county.csv")
 
 ##############################################################################
 # Presidential voting dataset
@@ -157,6 +157,9 @@ merged <- merged %>% arrange(GEO_ID, date)
 # Eliminate dates after max. date
 merged <- subset(merged, date <= MAX_DATE)
 
+# Eliminate duplicate dates
+merged <- merged %>% distinct()
+
 # Fill in no reported cases/deaths as "0"
 merged <- merged %>% mutate(
   cases_full = case_when(
@@ -206,7 +209,7 @@ merged_reg <- as.data.frame(merged_reg) %>% mutate_at(scale, ~((.x-median(.x))/I
 # Dataframe for values
 reg_df <- NULL
 
-for(i in 1:160) {
+for(i in 1:200) {
   # Regressions
   reg_dist <- glm(dist_roll_7 ~ state_name + perc_male + elder + perc_black + perc_Hisp + income + perc_rtail + perc_trspt + perc_hlthc + perc_forgn + perc_rural + republican_2016,
                   subset(merged_reg, date==(as.Date("2020-03-08")+i)), family="gaussian")
@@ -304,7 +307,7 @@ merged %>%
 
 # Rename quintiles
 merged <- merged %>% mutate(
-  income_cat = recode(income_cat,
+  income_cat = dplyr::recode(income_cat,
     "[1.09e+04,2.2e+04]"  = "Q1 ($10,931 - $21,963)",
     "(2.2e+04,2.47e+04]"  = "Q2 ($21,965 - $24,732)",
     "(2.47e+04,2.75e+04]" = "Q3 ($24,739 - $27,522)",
@@ -313,7 +316,7 @@ merged <- merged %>% mutate(
     )
   )
 merged <- merged %>% mutate(
-  trump_cat = recode(trump_cat,
+  trump_cat = dplyr::recode(trump_cat,
     "[0.0409,0.502]" = "Q1 (4.1% - 50.2%)",
     "(0.502,0.618]"  = "Q2 (50.2% - 61.8%)",
     "(0.618,0.697]"  = "Q3 (61.9% - 69.7%)",
@@ -328,7 +331,8 @@ merged <- merged %>%
 
 # Rename week variable
 merged <- merged %>% mutate(
-  week = recode(week,
+  week = dplyr::recode(week,
+    "1"  = NA_character_,
     "2"  = "03/02-\n03/08",
     "3"  = "03/09-\n03/15",
     "4"  = "03/16-\n03/22",
@@ -349,7 +353,12 @@ merged <- merged %>% mutate(
     "19" = "06/29-\n07/05",
     "20" = "07/06-\n07/12",
     "21" = "07/13-\n07/19",
-    "22" = "07/20-\n07/26"
+    "22" = "07/20-\n07/26",
+    "23" = "07/27-\n08/02",
+    "24" = "08/03-\n08/09",
+    "25" = "08/10-\n08/16",
+    "26" = "08/17-\n08/23",
+    "27" = "08/24-\n08/30"
   )
 )
 
@@ -362,7 +371,7 @@ distance_df <- merged %>%
 income_plot <- ggplot(subset(distance_df, !is.na(week)),
                       aes(y=daily_distance_diff, fill=income_cat)) +
   geom_boxplot(outlier.size=0, outlier.shape=NA, notch=T, size=0.5, outlier.alpha=0.5) +
-  facet_wrap(week ~ ., ncol = 21, strip.position = "bottom") +
+  facet_wrap(week ~ ., ncol = 27, strip.position = "bottom") +
   scale_fill_viridis_d() +
   geom_hline(yintercept=0, linetype="dashed", color="red", size=0.5) +
   theme_test() +
@@ -383,7 +392,7 @@ income_plot <- ggplot(subset(distance_df, !is.na(week)),
 trump_plot <- ggplot(subset(distance_df, !is.na(week)),
                      aes(y=daily_distance_diff, fill=trump_cat)) +
   geom_boxplot(outlier.size=0, outlier.shape=NA, notch=T, size=0.5, outlier.alpha=0.5) +
-  facet_wrap(week ~ ., ncol = 21, strip.position = "bottom") +
+  facet_wrap(week ~ ., ncol = 27, strip.position = "bottom") +
   scale_fill_viridis_d() +
   geom_hline(yintercept=0, linetype="dashed", color="red", size=0.5) +
   theme_test() +
@@ -404,7 +413,7 @@ trump_plot <- ggplot(subset(distance_df, !is.na(week)),
 quintile_plot <- plot_grid(income_plot, trump_plot, labels = c("A.", "B."), nrow = 2)
 
 # Print figure
-ggsave(plot=quintile_plot, file="Quintile plot.pdf", width=11, height=7, units='in', dpi=600)
+ggsave(plot=quintile_plot, file="Quintile plot.pdf", width=13, height=7, units='in', dpi=600)
 
 ##############################################################################
 # Graph: Distancing by day with correlations
@@ -429,10 +438,12 @@ distance_plot <- ggplot(merged, aes(x=date, y=daily_distance_diff, group=date)) 
                breaks = seq(as.Date("2020-03-01"), MAX_DATE+1, by="month")) +
   scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
   coord_cartesian(ylim = c(-1, 0.5),
-                  xlim = as.Date(c("2020-03-06", "2020-07-21"))) +
+                  xlim = as.Date(c("2020-03-06", "2020-08-25"))) +
   geom_vline(xintercept=as.Date('2020-03-13'), linetype="solid", color="black", size=0.5) +
   annotate("text", x=as.Date('2020-03-14'), y=0.4, label="National emergency declared", fontface=2, size=3, hjust=0, vjust=0.5) +
-  annotate("text", x=as.Date('2020-03-01'), y=-0.75, label="Reference\nperiod", fontface=2, size=3, hjust=0, vjust=0.5)
+  annotate("text", x=as.Date('2020-03-01'), y=-0.75, label="Reference\nperiod", fontface=2, size=3, hjust=0, vjust=0.5) +
+  annotate("text", x=as.Date('2020-08-04'), y=0.4, label="Less social distancing", fontface=4, size=3, hjust=0, vjust=0.5) +
+  annotate("text", x=as.Date('2020-08-04'), y=-0.6, label="More social distancing", fontface=4, size=3, hjust=0, vjust=0.5)
 
 # Print figure
 ggsave(plot=distance_plot, file="Distance plot.pdf", width=11, height=3.5, units='in', dpi=600)
@@ -474,8 +485,8 @@ corr_coef <- corr_matrix$r
 corr_pval <- corr_matrix$P
 
 # Remove date-date correlations
-corr_coef <- corr_coef[149:159, 1:148]
-corr_pval <- corr_pval[149:159, 1:148]
+corr_coef <- corr_coef[(ncol(corr_coef)-10):ncol(corr_coef), 1:(ncol(corr_coef)-11)]
+corr_pval <- corr_pval[(ncol(corr_coef)-10):ncol(corr_coef), 1:(ncol(corr_coef)-11)]
 
 # Define colors for correlation plot
 col <- colorRampPalette(c("#4477AA", "#77AADD", "#FFFFFF", "#EE9988", "#BB4444"))
