@@ -1,6 +1,6 @@
 # County-level determinants of engagement in social distancing for COVID-19
 # N.M. Kavanagh, R.R. Goel, A.S. Venkataramani
-# September 9, 2020
+# September 22, 2020
 
 # Please direct questions about this script file to nolan.kavanagh@pennmedicine.upenn.edu.
 
@@ -28,14 +28,14 @@ library(zoo)         # Analysis tools
 setwd("/Users/nolankavanagh/Dropbox/COVID projects/")
 
 # Set maximum date
-MAX_DATE <- as.Date("2020-08-30")
+MAX_DATE <- as.Date("2020-09-13")
 
 ##############################################################################
 # Social distancing dataset
 ##############################################################################
 
 # Read dataset into R
-social <- read.csv("/Users/nolankavanagh/Dropbox/COVID projects/Datasets/US SDS-2020-09-08-sds-v3-full-county.csv")
+social <- read.csv("/Users/nolankavanagh/Dropbox/COVID projects/Datasets/US SDS-2020-09-21-sds-v3-full-county.csv")
 
 ##############################################################################
 # Presidential voting dataset
@@ -195,16 +195,10 @@ merged_reg <- merged
 # Properly scale variables
 merged_reg$dist_roll_7           <- merged_reg$dist_roll_7*100
 merged_reg$daily_distance_diff   <- merged_reg$daily_distance_diff*100
-merged_reg$daily_visitation_diff <- merged_reg$daily_visitation_diff*100
 
 # Scale predictors by IQR
 scale <- c("perc_male", "elder", "perc_black", "perc_Hisp", "perc_collg", "income", "perc_rtail", "perc_trspt", "perc_hlthc", "perc_forgn", "perc_rural", "republican_2016")
 merged_reg <- as.data.frame(merged_reg) %>% mutate_at(scale, ~((.x-median(.x))/IQR(.x)))
-
-# # Scale cases by IQR by date
-# merged_reg <- as.data.frame(merged_reg) %>%
-#   group_by(date) %>%
-#   mutate_at("cases_full", ~((.x-mean(.x))/sd(.x)))
 
 # Dataframe for values
 reg_df <- NULL
@@ -358,7 +352,8 @@ merged <- merged %>% mutate(
     "24" = "08/03-\n08/09",
     "25" = "08/10-\n08/16",
     "26" = "08/17-\n08/23",
-    "27" = "08/24-\n08/30"
+    "27" = "08/24-\n08/30",
+    "28" = "08/31-\n09/13"
   )
 )
 
@@ -438,12 +433,12 @@ distance_plot <- ggplot(merged, aes(x=date, y=daily_distance_diff, group=date)) 
                breaks = seq(as.Date("2020-03-01"), MAX_DATE+1, by="month")) +
   scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
   coord_cartesian(ylim = c(-1, 0.5),
-                  xlim = as.Date(c("2020-03-06", "2020-08-25"))) +
+                  xlim = as.Date(c("2020-03-06", "2020-09-08"))) +
   geom_vline(xintercept=as.Date('2020-03-13'), linetype="solid", color="black", size=0.5) +
   annotate("text", x=as.Date('2020-03-14'), y=0.4, label="National emergency declared", fontface=2, size=3, hjust=0, vjust=0.5) +
-  annotate("text", x=as.Date('2020-03-01'), y=-0.75, label="Reference\nperiod", fontface=2, size=3, hjust=0, vjust=0.5) +
-  annotate("text", x=as.Date('2020-08-04'), y=0.4, label="Less social distancing", fontface=4, size=3, hjust=0, vjust=0.5) +
-  annotate("text", x=as.Date('2020-08-04'), y=-0.6, label="More social distancing", fontface=4, size=3, hjust=0, vjust=0.5)
+  annotate("text", x=as.Date('2020-02-28'), y=-0.75, label="Reference\nperiod", fontface=2, size=3, hjust=0, vjust=0.5) +
+  annotate("text", x=as.Date('2020-08-18'), y=0.4, label="Less social distancing", fontface=4, size=3, hjust=0, vjust=0.5) +
+  annotate("text", x=as.Date('2020-08-18'), y=-0.6, label="More social distancing", fontface=4, size=3, hjust=0, vjust=0.5)
 
 # Print figure
 ggsave(plot=distance_plot, file="Distance plot.pdf", width=11, height=3.5, units='in', dpi=600)
