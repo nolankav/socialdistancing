@@ -239,35 +239,25 @@ merged_reg <- as.data.frame(merged_reg) %>% group_by(date) %>%
 # Dataframe for values
 reg_df <- NULL; reg_dist <- NULL
 
-for(i in 8:300) {
+for(i in 7:300) {
   # Date subset
   subset <- subset(merged_reg, date==(as.Date("2020-03-08")+i))
   
   # Main text regressions
   reg_dist <- lm.cluster(formula=dist_roll_7 ~ state_name + perc_male + elder + perc_black + perc_Hisp + income + perc_rtail + perc_trspt + perc_hlthc + perc_forgn + perc_rural + republican_2016, data=subset, cluster=subset$state_name)
   
-  if(i >= 12) {
-    # # Supplemental regressions
-    # reg_supp <- lm.cluster(formula=dist_roll_7 ~ state_name + perc_male + elder + perc_black + perc_Hisp + income + perc_rtail + perc_trspt + perc_hlthc + perc_forgn + perc_rural + republican_2016 + weekly_cases_per_mil, data=subset, cluster=subset$state_name)
-  }
-  
   # Capture coefficients and errors
   temp_df1 <- as.data.frame(base::cbind(coeftest(reg_dist)[,1], coeftest(reg_dist)[,2], "Distance"))
   colnames(temp_df1) <- c("beta","error","outcome")
-  # temp_df2 <- as.data.frame(base::cbind(coeftest(reg_supp)[,1], coeftest(reg_supp)[,2], "Supplement"))
-  # colnames(temp_df2) <- c("beta","error","outcome")
 
   # Add variable names
   temp_df1 <- tibble::rownames_to_column(temp_df1, var="var")
-  # temp_df2 <- tibble::rownames_to_column(temp_df2, var="var")
-  
+
   # Assign proper date
   temp_df1$date <- (as.Date("2020-03-08")+i)
-  # temp_df2$date <- (as.Date("2020-03-08")+i)
-  
+
   # Add to dataframe
   reg_df <- rbind(reg_df, temp_df1)
-  # reg_df <- rbind(reg_df, temp_df2)
 }
 
 # Clean up model for export
@@ -324,34 +314,6 @@ coeff_plot <- ggplot(data=subset(reg_df, outcome=="Distance"),
 
 ggsave(plot=coeff_plot, file="Coefficients over time, main.pdf", width=7, height=6, units='in', dpi=600)
 
-# Graph rolling coefficients
-coeff_supp <- ggplot(data=subset(reg_df, outcome=="Supplement"),
-                     aes(x=as.Date(date), y=beta, ymin=lowerOR, ymax=upperOR, group=var)) +
-  facet_wrap(~var, nrow=3) +
-  geom_hline(yintercept=0, linetype="dashed", color="red", size=0.5) +
-  geom_ribbon(alpha=0.2, color=NA) +
-  geom_line(alpha=1) +
-  theme_test() +
-  theme(legend.position = "none",
-        legend.title = element_blank(),
-        axis.title.x = element_text(face="bold"),
-        axis.title.y = element_text(face="bold"),
-        axis.text.x  = element_text(angle = 90),
-        strip.background = element_blank(),
-        strip.text = element_text(face="bold", color="black"),
-        panel.grid.major.x = element_line(color="light gray", size=0.25),
-        panel.grid.major.y = element_line(color="light gray", size=0.25)) +
-  xlab("Date (End of 7-Day Rolling Average)") +
-  ylab("Percentage-Point Change in Average Momement,\nGiven Interquartile Increase in Characteristic") +
-  scale_x_date(labels = date_format("%b"),
-               limits = c(as.Date("2020-03-01"), MAX_DATE),
-               breaks = seq(as.Date("2020-03-01"), MAX_DATE, by="2 months")) +
-  scale_y_continuous(breaks = c(-5,-2.5,0,2.5,5,7.5)) +
-  coord_cartesian(ylim = c(-5.5,8))
-
-# Print figure
-ggsave(plot=coeff_supp, file="Coefficients over time, supplement.pdf", width=7, height=6, units='in', dpi=600)
-
 ##############################################################################
 # Graph: Distancing by income/politics
 ##############################################################################
@@ -393,7 +355,7 @@ merged <- merged %>% mutate(
   )
 
 # Summarize county movement by month
-distance_df <- merged %>% 
+distance_df <- subset(merged, date >= as.Date("2020-03-09")) %>% 
   group_by(month, GEO_ID, income_cat, trump_cat) %>%
   summarise(daily_distance_diff = mean(daily_distance_diff, na.rm = TRUE))
 
@@ -488,12 +450,12 @@ distance_plot <- ggplot(merged, aes(x=date, y=daily_distance_diff, group=date)) 
                breaks = seq(as.Date("2020-03-01"), as.Date("2020-12-01"), by="month")) +
   scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
   coord_cartesian(ylim = c(-1, 0.5),
-                  xlim = as.Date(c("2020-03-06", "2020-12-05"))) +
+                  xlim = as.Date(c("2020-03-06", "2020-12-01"))) +
   geom_vline(xintercept=as.Date('2020-03-13'), linetype="solid", color="black", size=0.5) +
   annotate("text", x=as.Date('2020-03-16'), y=0.4, label="National emergency declared", fontface=2, size=3, hjust=0, vjust=0.5) +
-  annotate("text", x=as.Date('2020-02-24'), y=-0.75, label="Reference\nperiod", fontface=2, size=3, hjust=0, vjust=0.5) +
-  annotate("text", x=as.Date('2020-10-16'), y=0.4, label="Less social distancing", fontface=4, size=3, hjust=0, vjust=0.5) +
-  annotate("text", x=as.Date('2020-10-16'), y=-0.75, label="More social distancing", fontface=4, size=3, hjust=0, vjust=0.5)
+  annotate("text", x=as.Date('2020-02-23'), y=-0.75, label="Reference\nperiod", fontface=2, size=3, hjust=0, vjust=0.5) +
+  annotate("text", x=as.Date('2020-10-16'), y=0.4, label="Less physical distancing", fontface=4, size=3, hjust=0, vjust=0.5) +
+  annotate("text", x=as.Date('2020-10-16'), y=-0.75, label="More physical distancing", fontface=4, size=3, hjust=0, vjust=0.5)
 
 # Print figure
 ggsave(plot=distance_plot, file="Distance plot.pdf", width=11, height=3.5, units='in', dpi=600)
@@ -658,7 +620,8 @@ dev.off()
 merged_reg <- merged
 
 # Properly scale variables
-merged_reg$dist_roll_7 <- merged_reg$dist_roll_7*100
+merged_reg$dist_roll_7         <- merged_reg$dist_roll_7*100
+merged_reg$daily_distance_diff <- merged_reg$daily_distance_diff*100
 
 # Scale predictors by IQR
 scale <- c("perc_male", "elder", "perc_black", "perc_Hisp", "income", "perc_rtail", "perc_trspt", "perc_hlthc", "perc_forgn", "perc_rural", "republican_2016")
@@ -754,12 +717,12 @@ ggsave(plot=coeff_supp, file="Coefficients over time, supplement.pdf", width=7, 
 # Save new dataframe
 merged_pool <- merged_reg
 
+# Subset to analysis dates (at complete weeks)
+merged_pool <- subset(merged_pool, date >= as.Date("2020-03-15") & date <= as.Date("2020-11-28"))
+
 # Define week variable
 merged_pool <- merged_pool %>%
-  mutate(week = cut.Date(date, breaks = "1 week", start.on.monday = T))
-
-# Subset to analysis dates
-merged_pool <- subset(merged_pool, date >= as.Date("2020-03-20"))
+  mutate(week = cut.Date(date, breaks = "1 week", start.on.monday = F))
 
 # Pool distancing by week
 merged_pool <- merged_pool %>% 
@@ -817,7 +780,6 @@ pool_plot <- ggplot(data=pool_df,
                     aes(x=as.Date(date), y=beta, ymin=lowerOR, ymax=upperOR, group=var)) +
   facet_wrap(~var, nrow=3) +
   geom_hline(yintercept=0, linetype="dashed", color="red", size=0.5) +
-  # geom_ribbon(alpha=0.2, color=NA) +
   geom_errorbar(alpha=0.2) +
   geom_line(alpha=1) +
   theme_test() +
