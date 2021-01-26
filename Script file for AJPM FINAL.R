@@ -1,6 +1,6 @@
 # County-level socioeconomic and political predictors of distancing for COVID-19
 # N.M. Kavanagh, R.R. Goel, A.S. Venkataramani
-# December 4, 2020
+# January 24, 2021
 
 # Please direct questions about this script file to nolan.kavanagh@pennmedicine.upenn.edu.
 
@@ -29,14 +29,14 @@ library(zoo)         # Analysis tools
 setwd("/Users/nolankavanagh/Dropbox/COVID projects/")
 
 # Set maximum date
-MAX_DATE <- as.Date("2020-11-29")
+MAX_DATE <- as.Date("2021-01-17")
 
 ##############################################################################
 # Social distancing dataset
 ##############################################################################
 
 # Read dataset into R
-social <- read.csv("Datasets/US SDS-2020-12-03-sds-v3-full-county.csv")
+social <- read.csv("Datasets/US SDS-2021-01-24-sds-v3-full-county.csv")
 
 ##############################################################################
 # Presidential voting dataset
@@ -121,7 +121,7 @@ census <- census %>%
          num_rural  = H002005,
          num_2010   = H002001,
          perc_forgn = DP02_0092PE,
-         )
+  )
 
 # Remove extraneous row
 census <- census[-grep("id", census$GEO_ID),]
@@ -188,15 +188,6 @@ merged <- merged %>% mutate(
 # Calculate cases per million
 merged$weekly_cases_per_mil <- merged$weekly_cases/merged$population*1000000
 
-# Calculate rolling averages
-merged <- merged %>%
-  group_by(GEO_ID) %>%
-  mutate(dist_roll_7 = rollmean(daily_distance_diff, k = 7, align = "right", fill = NA))
-
-# Define days of week
-merged$day_of_week <- weekdays(as.Date(as.character(merged$date),'%Y-%m-%d'))
-merged$day_of_week <- factor(merged$day_of_week, levels = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"))
-
 # Define month variable
 merged <- merged %>% mutate(
   month = case_when(
@@ -209,90 +200,101 @@ merged <- merged %>% mutate(
     date < as.Date("2020-10-01") ~ "September",
     date < as.Date("2020-11-01") ~ "October",
     date < as.Date("2020-12-01") ~ "November",
+    date < as.Date("2021-01-01") ~ "December",
+    date < as.Date("2021-02-01") ~ "January",
   )
 )
-merged$month <- factor(merged$month, levels = c("March", "April", "May", "June", "July", "August", "September", "October", "November"))
+merged$month <- factor(merged$month, levels = c("March", "April", "May", "June", "July", "August", "September", "October", "November", "December", "January"))
 
 # Complete cases for regression variables
 merged <- merged %>% 
-  filter_at(vars(c("dist_roll_7", "income", "perc_rural", "republican_2016")), all_vars(!is.na(.)))
+  filter_at(vars(c("daily_distance_diff", "income", "perc_rural", "republican_2016")), all_vars(!is.na(.)))
 
 ##############################################################################
-# Main regressions
+# Prepare pooled dataframe
 ##############################################################################
 
 # Regression dataset
-merged_reg <- merged
+merged_pool <- subset(merged, date >= "2020-03-09" & date <= as.Date("2021-01-17"))
 
-# Properly scale variables
-merged_reg$dist_roll_7         <- merged_reg$dist_roll_7*100
-merged_reg$daily_distance_diff <- merged_reg$daily_distance_diff*100
+# Properly scale distancing
+merged_pool$daily_distance_diff <- merged_pool$daily_distance_diff*100
 
 # Scale predictors by IQR
 scale <- c("perc_male", "elder", "perc_black", "perc_Hisp", "income", "perc_rtail", "perc_trspt", "perc_hlthc", "perc_forgn", "perc_rural", "republican_2016")
-merged_reg <- as.data.frame(merged_reg) %>% mutate_at(scale, ~((.x-median(.x))/IQR(.x)))
+merged_pool <- as.data.frame(merged_pool) %>% mutate_at(scale, ~((.x-median(.x))/IQR(.x)))
 
-# Scale cases by IQR by day
-merged_reg <- as.data.frame(merged_reg) %>% group_by(date) %>%
-  mutate_at("weekly_cases_per_mil", ~((.x-median(.x))/IQR(.x)))
+# Define week variable
+merged_pool <- merged_pool %>%
+  mutate(week = cut.Date(date, breaks = "1 week", start.on.monday = T))
 
-# Dataframe for values
-reg_df <- NULL; reg_dist <- NULL
+# Pool distancing by week
+merged_pool <- merged_pool %>% 
+  group_by(week, GEO_ID, state_name, perc_male, elder, perc_black, perc_Hisp, income, perc_rtail, perc_trspt, perc_hlthc, perc_forgn, perc_rural, republican_2016) %>%  
+  summarise(distance = mean(daily_distance_diff),
+            cases    = mean(weekly_cases_per_mil))
 
-for(i in 7:300) {
-  # Date subset
-  subset <- subset(merged_reg, date==(as.Date("2020-03-08")+i))
-  
-  # Main text regressions
-  reg_dist <- lm.cluster(formula=dist_roll_7 ~ state_name + perc_male + elder + perc_black + perc_Hisp + income + perc_rtail + perc_trspt + perc_hlthc + perc_forgn + perc_rural + republican_2016, data=subset, cluster=subset$state_name)
-  
-  # Capture coefficients and errors
-  temp_df1 <- as.data.frame(base::cbind(coeftest(reg_dist)[,1], coeftest(reg_dist)[,2], "Distance"))
-  colnames(temp_df1) <- c("beta","error","outcome")
+# Scale cases by IQR by week
+merged_pool <- as.data.frame(merged_pool) %>% group_by(week) %>%
+  mutate_at("cases", ~((.x-median(.x))/IQR(.x)))
 
-  # Add variable names
-  temp_df1 <- tibble::rownames_to_column(temp_df1, var="var")
+##############################################################################
+# Pooled main regression
+##############################################################################
 
-  # Assign proper date
-  temp_df1$date <- (as.Date("2020-03-08")+i)
+# Run pooled regression
+reg_pool <- lm.cluster(formula=distance ~ state_name:week + perc_male:week + elder:week + perc_black:week + perc_Hisp:week + income:week + perc_rtail:week + perc_trspt:week + perc_hlthc:week + perc_forgn:week + perc_rural:week + republican_2016:week, data=merged_pool, cluster=merged_pool$GEO_ID)
+summary(reg_pool)
 
-  # Add to dataframe
-  reg_df <- rbind(reg_df, temp_df1)
-}
+# Capture coefficients and errors
+pool_df <- as.data.frame(base::cbind(coeftest(reg_pool)[,1], coeftest(reg_pool)[,2]))
+colnames(pool_df) <- c("beta","error")
 
-# Clean up model for export
-reg_df <- reg_df[-grep("Intercept",  reg_df$var),]
-reg_df <- reg_df[-grep("state_name", reg_df$var),]
+# Add variable names
+pool_df <- tibble::rownames_to_column(pool_df, var="var")
+pool_df$date <- pool_df$var
+
+# Remove states and intercept
+pool_df <- pool_df[-grep("Intercept",  pool_df$var),]
+pool_df <- pool_df[-grep("state_name", pool_df$var),]
+
+# Clean up date column
+pool_df$date <- str_remove(pool_df$date, "\\:[^.]*$")
+pool_df$date <- str_remove(pool_df$date, "week")
+
+# Clean up variable column
+pool_df$var <- str_remove(pool_df$var, "[^.]*\\:")
 
 # Treat values as numeric
-reg_df$beta  <- as.numeric(as.character(reg_df$beta))
-reg_df$error <- as.numeric(as.character(reg_df$error))
+pool_df$beta  <- as.numeric(as.character(pool_df$beta))
+pool_df$error <- as.numeric(as.character(pool_df$error))
 
 # Calculate 95% confidence intervals
-reg_df$lowerOR <- reg_df$beta - 1.96*reg_df$error
-reg_df$upperOR <- reg_df$beta + 1.96*reg_df$error
+pool_df$lowerOR <- pool_df$beta - 1.96*pool_df$error
+pool_df$upperOR <- pool_df$beta + 1.96*pool_df$error
 
 # Rename variables
-reg_df$var <- sub("perc_male",  "Pct. Male", reg_df$var)
-reg_df$var <- sub("perc_black", "Pct. Black", reg_df$var)
-reg_df$var <- sub("perc_Hisp",  "Pct. Hispanic", reg_df$var)
-reg_df$var <- sub("elder",      "Pct. 65 Years or Older", reg_df$var)
-reg_df$var <- sub("perc_forgn", "Pct. Foreign-Born", reg_df$var)
-reg_df$var <- sub("income",     "Per Capita Income", reg_df$var)
-reg_df$var <- sub("perc_rural", "Pct. Rural", reg_df$var)
-reg_df$var <- sub("republican_2016", "Pct. Trump Support", reg_df$var)
-reg_df$var <- sub("perc_rtail", "Pct. Employment in\nRetail", reg_df$var)
-reg_df$var <- sub("perc_trspt", "Pct. Employment in\nTransport.", reg_df$var)
-reg_df$var <- sub("perc_hlthc", "Pct. Employment in\nHealth, Education, Social", reg_df$var)
-reg_df$var <- sub("weekly_cases_per_mil", "Cases per Million\nin Last Week", reg_df$var)
-reg_df$var <- factor(reg_df$var, levels = c("Pct. Male", "Pct. Black", "Pct. Hispanic", "Pct. 65 Years or Older", "Pct. Foreign-Born", "Pct. with College Degree", "Per Capita Income", "Pct. Rural", "Pct. Trump Support", "Pct. Employment in\nRetail", "Pct. Employment in\nTransport.", "Pct. Employment in\nHealth, Education, Social", "Cases per Million\nin Last Week"))
+pool_df$var <- sub("perc_male",  "Pct. Male", pool_df$var)
+pool_df$var <- sub("perc_black", "Pct. Black", pool_df$var)
+pool_df$var <- sub("perc_Hisp",  "Pct. Hispanic", pool_df$var)
+pool_df$var <- sub("elder",      "Pct. 65 Years or Older", pool_df$var)
+pool_df$var <- sub("perc_forgn", "Pct. Foreign-Born", pool_df$var)
+pool_df$var <- sub("income",     "Per Capita Income", pool_df$var)
+pool_df$var <- sub("perc_rural", "Pct. Rural", pool_df$var)
+pool_df$var <- sub("republican_2016", "Pct. Trump Support", pool_df$var)
+pool_df$var <- sub("perc_rtail", "Pct. Employment in\nRetail", pool_df$var)
+pool_df$var <- sub("perc_trspt", "Pct. Employment in\nTransport.", pool_df$var)
+pool_df$var <- sub("perc_hlthc", "Pct. Employment in\nHealth, Education, Social", pool_df$var)
+pool_df$var <- sub("weekly_cases_per_mil", "Cases per Million\nin Past Week", pool_df$var)
+pool_df$var <- factor(pool_df$var, levels = c("Pct. Male", "Pct. Black", "Pct. Hispanic", "Pct. 65 Years or Older", "Pct. Foreign-Born", "Pct. with College Degree", "Per Capita Income", "Pct. Rural", "Pct. Trump Support", "Pct. Employment in\nRetail", "Pct. Employment in\nTransport.", "Pct. Employment in\nHealth, Education, Social", "Cases per Million\nin Past Week"))
 
 # Graph rolling coefficients
-coeff_plot <- ggplot(data=subset(reg_df, outcome=="Distance"),
-                     aes(x=as.Date(date), y=beta, ymin=lowerOR, ymax=upperOR, group=var)) +
+pool_plot <- ggplot(data=pool_df,
+                    aes(x=as.Date(date), y=beta, ymin=lowerOR, ymax=upperOR, group=var)) +
   facet_wrap(~var, nrow=3) +
   geom_hline(yintercept=0, linetype="dashed", color="red", size=0.5) +
-  geom_ribbon(alpha=0.2, color=NA) +
+  geom_errorbar(alpha=0.2) +
+  # geom_ribbon(alpha=0.2, color=NA) +
   geom_line(alpha=1) +
   theme_test() +
   theme(legend.position = "none",
@@ -304,15 +306,16 @@ coeff_plot <- ggplot(data=subset(reg_df, outcome=="Distance"),
         strip.text = element_text(face="bold", color="black"),
         panel.grid.major.x = element_line(color="light gray", size=0.25),
         panel.grid.major.y = element_line(color="light gray", size=0.25)) +
-  xlab("Date (End of 7-Day Rolling Average)") +
+  xlab("Date (Start of Pooled Week)") +
   ylab("Percentage-Point Change in Average Momement,\nGiven Interquartile Increase in Characteristic") +
   scale_x_date(labels = date_format("%b"),
-               limits = c(as.Date("2020-03-01"), MAX_DATE),
-               breaks = seq(as.Date("2020-03-01"), MAX_DATE, by="2 months")) +
+               limits = c(as.Date("2020-03-01"), as.Date("2021-01-17")),
+               breaks = seq(as.Date("2020-03-01"), as.Date("2021-01-17"), by="2 months")) +
   scale_y_continuous(breaks = c(-5,-2.5,0,2.5,5,7.5)) +
   coord_cartesian(ylim = c(-5.5,8))
 
-ggsave(plot=coeff_plot, file="Coefficients over time, main.pdf", width=7, height=6, units='in', dpi=600)
+# Print figure
+ggsave(plot=pool_plot, file="Pooled coefficients plot.pdf", width=7, height=6, units='in', dpi=600)
 
 ##############################################################################
 # Graph: Distancing by income/politics
@@ -337,22 +340,22 @@ merged %>%
 # Rename quintiles
 merged <- merged %>% mutate(
   income_cat = dplyr::recode(income_cat,
-    "[1.09e+04,2.2e+04]"  = "Q1 ($10,931 - $21,963)",
-    "(2.2e+04,2.47e+04]"  = "Q2 ($21,965 - $24,732)",
-    "(2.47e+04,2.75e+04]" = "Q3 ($24,739 - $27,522)",
-    "(2.75e+04,3.11e+04]" = "Q4 ($27,523 - $31,091)",
-    "(3.11e+04,7.28e+04]" = "Q5 ($31,096 - $72,832)"
-    )
+                             "[1.09e+04,2.2e+04]"  = "Q1 ($10,931 - $21,963)",
+                             "(2.2e+04,2.47e+04]"  = "Q2 ($21,965 - $24,732)",
+                             "(2.47e+04,2.75e+04]" = "Q3 ($24,739 - $27,522)",
+                             "(2.75e+04,3.11e+04]" = "Q4 ($27,523 - $31,091)",
+                             "(3.11e+04,7.28e+04]" = "Q5 ($31,096 - $72,832)"
   )
+)
 merged <- merged %>% mutate(
   trump_cat = dplyr::recode(trump_cat,
-    "[0.0409,0.502]" = "Q1 (4.1% - 50.2%)",
-    "(0.502,0.618]"  = "Q2 (50.2% - 61.8%)",
-    "(0.618,0.697]"  = "Q3 (61.9% - 69.7%)",
-    "(0.697,0.762]"  = "Q4 (69.8% - 76.2%)",
-    "(0.762,0.916]"  = "Q5 (76.3% - 91.6%)"
-    )
+                            "[0.0409,0.502]" = "Q1 (4.1% - 50.2%)",
+                            "(0.502,0.618]"  = "Q2 (50.2% - 61.8%)",
+                            "(0.618,0.697]"  = "Q3 (61.9% - 69.7%)",
+                            "(0.697,0.762]"  = "Q4 (69.8% - 76.2%)",
+                            "(0.762,0.916]"  = "Q5 (76.3% - 91.6%)"
   )
+)
 
 # Summarize county movement by month
 distance_df <- subset(merged, date >= as.Date("2020-03-09")) %>% 
@@ -363,7 +366,7 @@ distance_df <- subset(merged, date >= as.Date("2020-03-09")) %>%
 income_plot <- ggplot(subset(distance_df, !is.na(month)),
                       aes(y=daily_distance_diff, fill=income_cat)) +
   geom_boxplot(outlier.size=0, outlier.shape=NA, notch=T, size=0.5, outlier.alpha=0.5) +
-  facet_wrap(month ~ ., ncol = 9, strip.position = "bottom") +
+  facet_wrap(month ~ ., ncol=11, strip.position = "bottom") +
   scale_fill_grey() +
   geom_hline(yintercept=0, linetype="dashed", color="red", size=0.5) +
   theme_test() +
@@ -382,7 +385,7 @@ income_plot <- ggplot(subset(distance_df, !is.na(month)),
 
 # Legend for income quintiles
 income_legend <- ggplot(subset(distance_df, !is.na(month)),
-                      aes(y=daily_distance_diff, fill=income_cat)) +
+                        aes(y=daily_distance_diff, fill=income_cat)) +
   geom_boxplot(outlier.size=0, outlier.shape=NA, notch=T, size=0.5, outlier.alpha=0.5) +
   scale_fill_grey() +
   theme_test() +
@@ -394,7 +397,7 @@ income_legend <- ggplot(subset(distance_df, !is.na(month)),
 trump_plot <- ggplot(subset(distance_df, !is.na(month)),
                      aes(y=daily_distance_diff, fill=trump_cat)) +
   geom_boxplot(outlier.size=0, outlier.shape=NA, notch=T, size=0.5, outlier.alpha=0.5) +
-  facet_wrap(month ~ ., ncol = 9, strip.position = "bottom") +
+  facet_wrap(month ~ ., ncol=11, strip.position = "bottom") +
   scale_fill_grey() +
   geom_hline(yintercept=0, linetype="dashed", color="red", size=0.5) +
   theme_test() +
@@ -414,7 +417,7 @@ trump_plot <- ggplot(subset(distance_df, !is.na(month)),
 
 # Legend for politics quintiles
 trump_legend <- ggplot(subset(distance_df, !is.na(month)),
-                     aes(y=daily_distance_diff, fill=trump_cat)) +
+                       aes(y=daily_distance_diff, fill=trump_cat)) +
   geom_boxplot(outlier.size=0, outlier.shape=NA, notch=T, size=0.5, outlier.alpha=0.5) +
   scale_fill_grey() +
   theme_test() +
@@ -423,10 +426,10 @@ trump_legend <- ggplot(subset(distance_df, !is.na(month)),
   labs(fill = "Trump Support Quintiles")
 
 # Compile figures into object
-quintile_plot <- plot_grid(income_plot, get_legend(income_legend), trump_plot, get_legend(trump_legend), labels = c("A.", "", "B.", ""), rel_widths = c(1,0.3), nrow = 2)
+quintile_plot <- plot_grid(income_plot, get_legend(income_legend), trump_plot, get_legend(trump_legend), labels = c("A.", "", "B.", ""), rel_widths = c(1,0.2), nrow = 2)
 
 # Print figure
-ggsave(plot=quintile_plot, file="Quintile plot.pdf", width=9.5, height=6, units='in', dpi=600)
+ggsave(plot=quintile_plot, file="Quintile plot.pdf", width=11, height=6, units='in', dpi=600)
 
 ##############################################################################
 # Graph: Distancing by day
@@ -447,47 +450,18 @@ distance_plot <- ggplot(merged, aes(x=date, y=daily_distance_diff, group=date)) 
   # xlab("Date") +
   ylab("Change in Average Movement") +
   scale_x_date(labels = date_format("%b"),
-               breaks = seq(as.Date("2020-03-01"), as.Date("2020-12-01"), by="month")) +
+               breaks = seq(as.Date("2020-03-01"), as.Date("2021-01-10"), by="month")) +
   scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
   coord_cartesian(ylim = c(-1, 0.5),
-                  xlim = as.Date(c("2020-03-06", "2020-12-01"))) +
+                  xlim = as.Date(c("2020-03-06", "2021-01-10"))) +
   geom_vline(xintercept=as.Date('2020-03-13'), linetype="solid", color="black", size=0.5) +
   annotate("text", x=as.Date('2020-03-16'), y=0.4, label="National emergency declared", fontface=2, size=3, hjust=0, vjust=0.5) +
   annotate("text", x=as.Date('2020-02-23'), y=-0.75, label="Reference\nperiod", fontface=2, size=3, hjust=0, vjust=0.5) +
-  annotate("text", x=as.Date('2020-10-16'), y=0.4, label="Less physical distancing", fontface=4, size=3, hjust=0, vjust=0.5) +
-  annotate("text", x=as.Date('2020-10-16'), y=-0.75, label="More physical distancing", fontface=4, size=3, hjust=0, vjust=0.5)
+  annotate("text", x=as.Date('2020-11-20'), y=0.4, label="Less physical distancing", fontface=4, size=3, hjust=0, vjust=0.5) +
+  annotate("text", x=as.Date('2020-11-20'), y=-0.75, label="More physical distancing", fontface=4, size=3, hjust=0, vjust=0.5)
 
 # Print figure
 ggsave(plot=distance_plot, file="Distance plot.pdf", width=11, height=3.5, units='in', dpi=600)
-
-##############################################################################
-# Graph: Cases by day
-##############################################################################
-
-# Plot cases reported in past week
-cases_plot <- ggplot(merged, aes(x=date, y=weekly_cases, group=date)) +
-  geom_rect(aes(xmin=as.Date("2020-02-10"), xmax=as.Date("2020-03-08"),
-                ymin=-Inf, ymax=Inf), fill='gray90') +
-  geom_boxplot(fill="grey", outlier.size=0, outlier.shape=NA, notch=T, size=0.5, outlier.alpha=0.5) +
-  geom_hline(yintercept=0, linetype="dashed", color="red", size=0.5) +
-  theme_test() +
-  theme(axis.title.x = element_blank(),
-        axis.title.y = element_text(face="bold"),
-        axis.text.x  = element_text(angle=0, hjust=0),
-        panel.grid.major.x = element_line(color="light gray", size=0.25),
-        panel.grid.major.y = element_line(color="light gray", size=0.25)) +
-  # xlab("Date") +
-  ylab("Cases per Million in Past Week") +
-  scale_x_date(position = "top",
-               labels = date_format("%m/%d"),
-               breaks = seq(as.Date("2020-03-01"), MAX_DATE+1, by="month")) +
-  coord_cartesian(ylim = c(0,800),
-                  xlim = as.Date(c("2020-03-06", "2020-12-01"))) +
-  geom_vline(xintercept=as.Date('2020-03-13'), linetype="solid", color="black", size=0.5) +
-  annotate("text", x=as.Date('2020-03-16'), y=700, label="National emergency declared", fontface=2, size=3, hjust=0, vjust=0.5)
-
-# Print figure
-ggsave(plot=cases_plot, file="Cases plot.pdf", width=11, height=3.5, units='in', dpi=600)
 
 ##############################################################################
 # Graph: Daily correlations between characteristics and distancing
@@ -552,7 +526,7 @@ corr_plot <- corrplot(corr_coef, method = "color", col = col(200), cl.pos = "r",
                       tl.col = "black", tl.cex = 0.14, number.cex = 0.14, tl.srt = 90,
                       
                       # Use significance levels
-                      p.mat = corr_pval, sig.level = 0.0000155,
+                      p.mat = corr_pval, sig.level = 0.000015,
                       insig = "label_sig", pch.cex = 0.14)
 
 # Print figure
@@ -596,7 +570,7 @@ pdf(file = "Correlation matrix.pdf")
 # Plot correlation matrix
 corr_plot <- corrplot(corr_coef, method = "color", col = col(200),
                       cl.pos = "n", type = "upper", 
-         
+                      
                       # Reorder variables
                       order = "original",
                       
@@ -613,124 +587,11 @@ corr_plot <- corrplot(corr_coef, method = "color", col = col(200),
 dev.off()
 
 ##############################################################################
-# Sensitivity analysis: Daily regressions with COVID-19 cases
+# Sensitivity analysis: Pooled regression with state cluster
 ##############################################################################
-
-# Regression dataset
-merged_reg <- merged
-
-# Properly scale variables
-merged_reg$dist_roll_7         <- merged_reg$dist_roll_7*100
-merged_reg$daily_distance_diff <- merged_reg$daily_distance_diff*100
-
-# Scale predictors by IQR
-scale <- c("perc_male", "elder", "perc_black", "perc_Hisp", "income", "perc_rtail", "perc_trspt", "perc_hlthc", "perc_forgn", "perc_rural", "republican_2016")
-merged_reg <- as.data.frame(merged_reg) %>% mutate_at(scale, ~((.x-median(.x))/IQR(.x)))
-
-# Scale cases by IQR by day
-merged_reg <- as.data.frame(merged_reg) %>% group_by(date) %>%
-  mutate_at("weekly_cases_per_mil", ~((.x-median(.x))/IQR(.x)))
-
-# Dataframe for values
-supp_df <- NULL; reg_supp <- NULL
-
-for(i in 12:300) {
-  # Date subset
-  subset <- subset(merged_reg, date==(as.Date("2020-03-08")+i))
-  
-  # Supplemental regressions
-  reg_supp <- lm.cluster(formula=dist_roll_7 ~ state_name + perc_male + elder + perc_black + perc_Hisp + income + perc_rtail + perc_trspt + perc_hlthc + perc_forgn + perc_rural + republican_2016 + weekly_cases_per_mil, data=subset, cluster=subset$state_name)
-  
-  # Capture coefficients and errors
-  temp_df2 <- as.data.frame(base::cbind(coeftest(reg_supp)[,1], coeftest(reg_supp)[,2], "Supplement"))
-  colnames(temp_df2) <- c("beta","error","outcome")
-  
-  # Add variable names
-  temp_df2 <- tibble::rownames_to_column(temp_df2, var="var")
-  
-  # Assign proper date
-  temp_df2$date <- (as.Date("2020-03-08")+i)
-  
-  # Add to dataframe
-  supp_df <- rbind(supp_df, temp_df2)
-}
-
-# Clean up model for export
-supp_df <- supp_df[-grep("Intercept",  supp_df$var),]
-supp_df <- supp_df[-grep("state_name", supp_df$var),]
-
-# Treat values as numeric
-supp_df$beta  <- as.numeric(as.character(supp_df$beta))
-supp_df$error <- as.numeric(as.character(supp_df$error))
-
-# Calculate 95% confidence intervals
-supp_df$lowerOR <- supp_df$beta - 1.96*supp_df$error
-supp_df$upperOR <- supp_df$beta + 1.96*supp_df$error
-
-# Rename variables
-supp_df$var <- sub("perc_male",  "Pct. Male", supp_df$var)
-supp_df$var <- sub("perc_black", "Pct. Black", supp_df$var)
-supp_df$var <- sub("perc_Hisp",  "Pct. Hispanic", supp_df$var)
-supp_df$var <- sub("elder",      "Pct. 65 Years or Older", supp_df$var)
-supp_df$var <- sub("perc_forgn", "Pct. Foreign-Born", supp_df$var)
-supp_df$var <- sub("income",     "Per Capita Income", supp_df$var)
-supp_df$var <- sub("perc_rural", "Pct. Rural", supp_df$var)
-supp_df$var <- sub("republican_2016", "Pct. Trump Support", supp_df$var)
-supp_df$var <- sub("perc_rtail", "Pct. Employment in\nRetail", supp_df$var)
-supp_df$var <- sub("perc_trspt", "Pct. Employment in\nTransport.", supp_df$var)
-supp_df$var <- sub("perc_hlthc", "Pct. Employment in\nHealth, Education, Social", supp_df$var)
-supp_df$var <- sub("weekly_cases_per_mil", "Cases per Million\nin Last Week", supp_df$var)
-supp_df$var <- factor(supp_df$var, levels = c("Pct. Male", "Pct. Black", "Pct. Hispanic", "Pct. 65 Years or Older", "Pct. Foreign-Born", "Pct. with College Degree", "Per Capita Income", "Pct. Rural", "Pct. Trump Support", "Pct. Employment in\nRetail", "Pct. Employment in\nTransport.", "Pct. Employment in\nHealth, Education, Social", "Cases per Million\nin Last Week"))
-
-# Graph rolling coefficients
-coeff_supp <- ggplot(data=subset(supp_df, outcome=="Supplement"),
-                     aes(x=as.Date(date), y=beta, ymin=lowerOR, ymax=upperOR, group=var)) +
-  facet_wrap(~var, nrow=3) +
-  geom_hline(yintercept=0, linetype="dashed", color="red", size=0.5) +
-  geom_ribbon(alpha=0.2, color=NA) +
-  geom_line(alpha=1) +
-  theme_test() +
-  theme(legend.position = "none",
-        legend.title = element_blank(),
-        axis.title.x = element_text(face="bold"),
-        axis.title.y = element_text(face="bold"),
-        axis.text.x  = element_text(angle = 90),
-        strip.background = element_blank(),
-        strip.text = element_text(face="bold", color="black"),
-        panel.grid.major.x = element_line(color="light gray", size=0.25),
-        panel.grid.major.y = element_line(color="light gray", size=0.25)) +
-  xlab("Date (End of 7-Day Rolling Average)") +
-  ylab("Percentage-Point Change in Average Momement,\nGiven Interquartile Increase in Characteristic") +
-  scale_x_date(labels = date_format("%b"),
-               limits = c(as.Date("2020-03-01"), MAX_DATE),
-               breaks = seq(as.Date("2020-03-01"), MAX_DATE, by="2 months")) +
-  scale_y_continuous(breaks = c(-5,-2.5,0,2.5,5,7.5)) +
-  coord_cartesian(ylim = c(-5.5,8))
-
-# Print figure
-ggsave(plot=coeff_supp, file="Coefficients over time, supplement.pdf", width=7, height=6, units='in', dpi=600)
-
-##############################################################################
-# Sensitivity analysis: Panel regression pooled by week
-##############################################################################
-
-# Save new dataframe
-merged_pool <- merged_reg
-
-# Subset to analysis dates (at complete weeks)
-merged_pool <- subset(merged_pool, date >= as.Date("2020-03-15") & date <= as.Date("2020-11-28"))
-
-# Define week variable
-merged_pool <- merged_pool %>%
-  mutate(week = cut.Date(date, breaks = "1 week", start.on.monday = F))
-
-# Pool distancing by week
-merged_pool <- merged_pool %>% 
-  group_by(week, GEO_ID, state_name, perc_male, elder, perc_black, perc_Hisp, income, perc_rtail, perc_trspt, perc_hlthc, perc_forgn, perc_rural, republican_2016) %>%  
-  summarise(distance = mean(daily_distance_diff))
 
 # Run pooled regression
-reg_pool <- lm.cluster(formula=distance ~ state_name:week + perc_male:week + elder:week + perc_black:week + perc_Hisp:week + income:week + perc_rtail:week + perc_trspt:week + perc_hlthc:week + perc_forgn:week + perc_rural:week + republican_2016:week, data=merged_pool, cluster=merged_pool$GEO_ID)
+reg_pool <- lm.cluster(formula=distance ~ state_name:week + perc_male:week + elder:week + perc_black:week + perc_Hisp:week + income:week + perc_rtail:week + perc_trspt:week + perc_hlthc:week + perc_forgn:week + perc_rural:week + republican_2016:week, data=merged_pool, cluster=merged_pool$state_name)
 summary(reg_pool)
 
 # Capture coefficients and errors
@@ -795,10 +656,92 @@ pool_plot <- ggplot(data=pool_df,
   xlab("Date (Start of Pooled Week)") +
   ylab("Percentage-Point Change in Average Momement,\nGiven Interquartile Increase in Characteristic") +
   scale_x_date(labels = date_format("%b"),
-               limits = c(as.Date("2020-03-01"), as.Date("2020-11-30")),
-               breaks = seq(as.Date("2020-03-01"), as.Date("2020-11-30"), by="2 months")) +
+               limits = c(as.Date("2020-03-01"), as.Date("2021-01-17")),
+               breaks = seq(as.Date("2020-03-01"), as.Date("2021-01-17"), by="2 months")) +
   scale_y_continuous(breaks = c(-5,-2.5,0,2.5,5,7.5)) +
   coord_cartesian(ylim = c(-5.5,8))
 
 # Print figure
-ggsave(plot=pool_plot, file="Pooled coefficients plot.pdf", width=7, height=6, units='in', dpi=600)
+ggsave(plot=pool_plot, file="Pooled coefficients plot, state.pdf", width=7, height=6, units='in', dpi=600)
+
+##############################################################################
+# Sensitivity analysis: Pooled regression with COVID-19 cases
+##############################################################################
+
+# Regression dataset
+merged_pool_2 <- subset(merged_pool, !(week %in% c("2020-03-09", "2020-03-16")))
+
+# Run pooled regression
+reg_pool <- lm.cluster(formula=distance ~ state_name:week + perc_male:week + elder:week + perc_black:week + perc_Hisp:week + income:week + perc_rtail:week + perc_trspt:week + perc_hlthc:week + perc_forgn:week + perc_rural:week + republican_2016:week + cases:week, data=merged_pool_2, cluster=merged_pool_2$GEO_ID)
+summary(reg_pool)
+
+# Capture coefficients and errors
+pool_df <- as.data.frame(base::cbind(coeftest(reg_pool)[,1], coeftest(reg_pool)[,2]))
+colnames(pool_df) <- c("beta","error")
+
+# Add variable names
+pool_df <- tibble::rownames_to_column(pool_df, var="var")
+pool_df$date <- pool_df$var
+
+# Remove states and intercept
+pool_df <- pool_df[-grep("Intercept",  pool_df$var),]
+pool_df <- pool_df[-grep("state_name", pool_df$var),]
+
+# Clean up date column
+pool_df$date <- str_remove(pool_df$date, "\\:[^.]*$")
+pool_df$date <- str_remove(pool_df$date, "week")
+
+# Clean up variable column
+pool_df$var <- str_remove(pool_df$var, "[^.]*\\:")
+
+# Treat values as numeric
+pool_df$beta  <- as.numeric(as.character(pool_df$beta))
+pool_df$error <- as.numeric(as.character(pool_df$error))
+
+# Calculate 95% confidence intervals
+pool_df$lowerOR <- pool_df$beta - 1.96*pool_df$error
+pool_df$upperOR <- pool_df$beta + 1.96*pool_df$error
+
+# Rename variables
+pool_df$var <- sub("perc_male",  "Pct. Male", pool_df$var)
+pool_df$var <- sub("perc_black", "Pct. Black", pool_df$var)
+pool_df$var <- sub("perc_Hisp",  "Pct. Hispanic", pool_df$var)
+pool_df$var <- sub("elder",      "Pct. 65 Years or Older", pool_df$var)
+pool_df$var <- sub("perc_forgn", "Pct. Foreign-Born", pool_df$var)
+pool_df$var <- sub("income",     "Per Capita Income", pool_df$var)
+pool_df$var <- sub("perc_rural", "Pct. Rural", pool_df$var)
+pool_df$var <- sub("republican_2016", "Pct. Trump Support", pool_df$var)
+pool_df$var <- sub("perc_rtail", "Pct. Employment in\nRetail", pool_df$var)
+pool_df$var <- sub("perc_trspt", "Pct. Employment in\nTransport.", pool_df$var)
+pool_df$var <- sub("perc_hlthc", "Pct. Employment in\nHealth, Education, Social", pool_df$var)
+pool_df$var <- sub("cases",      "Cases per Million\nin Past Week", pool_df$var)
+pool_df$var <- factor(pool_df$var, levels = c("Pct. Male", "Pct. Black", "Pct. Hispanic", "Pct. 65 Years or Older", "Pct. Foreign-Born", "Pct. with College Degree", "Per Capita Income", "Pct. Rural", "Pct. Trump Support", "Pct. Employment in\nRetail", "Pct. Employment in\nTransport.", "Pct. Employment in\nHealth, Education, Social", "Cases per Million\nin Past Week"))
+
+# Graph rolling coefficients
+pool_plot <- ggplot(data=pool_df,
+                    aes(x=as.Date(date), y=beta, ymin=lowerOR, ymax=upperOR, group=var)) +
+  facet_wrap(~var, nrow=3) +
+  geom_hline(yintercept=0, linetype="dashed", color="red", size=0.5) +
+  geom_errorbar(alpha=0.2) +
+  # geom_ribbon(alpha=0.2, color=NA) +
+  geom_line(alpha=1) +
+  theme_test() +
+  theme(legend.position = "none",
+        legend.title = element_blank(),
+        axis.title.x = element_text(face="bold"),
+        axis.title.y = element_text(face="bold"),
+        axis.text.x  = element_text(angle = 90),
+        strip.background = element_blank(),
+        strip.text = element_text(face="bold", color="black"),
+        panel.grid.major.x = element_line(color="light gray", size=0.25),
+        panel.grid.major.y = element_line(color="light gray", size=0.25)) +
+  xlab("Date (Start of Pooled Week)") +
+  ylab("Percentage-Point Change in Average Momement,\nGiven Interquartile Increase in Characteristic") +
+  scale_x_date(labels = date_format("%b"),
+               limits = c(as.Date("2020-03-01"), as.Date("2021-01-17")),
+               breaks = seq(as.Date("2020-03-01"), as.Date("2021-01-17"), by="2 months")) +
+  scale_y_continuous(breaks = c(-5,-2.5,0,2.5,5,7.5)) +
+  coord_cartesian(ylim = c(-5.5,8))
+
+# Print figure
+ggsave(plot=pool_plot, file="Pooled coefficients plot, cases.pdf", width=7, height=6, units='in', dpi=600)
