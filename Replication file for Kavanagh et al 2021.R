@@ -1,6 +1,6 @@
 # County-level socioeconomic and political predictors of distancing for COVID-19
 # N.M. Kavanagh, R.R. Goel, A.S. Venkataramani
-# January 24, 2021
+# February 27, 2021
 
 # Please direct questions about this script file to nolan.kavanagh@pennmedicine.upenn.edu.
 
@@ -36,7 +36,7 @@ MAX_DATE <- as.Date("2021-01-17")
 ##############################################################################
 
 # Read dataset into R
-social <- read.csv("Datasets/US SDS-2021-01-24-sds-v3-full-county.csv")
+social <- read.csv("Datasets/US SDS-2021-02-23-sds-v3-full-county.csv")
 
 ##############################################################################
 # Presidential voting dataset
@@ -274,19 +274,19 @@ pool_df$lowerOR <- pool_df$beta - 1.96*pool_df$error
 pool_df$upperOR <- pool_df$beta + 1.96*pool_df$error
 
 # Rename variables
-pool_df$var <- sub("perc_male",  "Pct. Male", pool_df$var)
-pool_df$var <- sub("perc_black", "Pct. Black", pool_df$var)
-pool_df$var <- sub("perc_Hisp",  "Pct. Hispanic", pool_df$var)
-pool_df$var <- sub("elder",      "Pct. 65 Years or Older", pool_df$var)
-pool_df$var <- sub("perc_forgn", "Pct. Foreign-Born", pool_df$var)
+pool_df$var <- sub("perc_male",  "Male, %", pool_df$var)
+pool_df$var <- sub("perc_black", "Black, %", pool_df$var)
+pool_df$var <- sub("perc_Hisp",  "Hispanic, %", pool_df$var)
+pool_df$var <- sub("elder",      "Age \u226565 Years, %", pool_df$var)
+pool_df$var <- sub("perc_forgn", "Foreign-Born, %", pool_df$var)
 pool_df$var <- sub("income",     "Per Capita Income", pool_df$var)
-pool_df$var <- sub("perc_rural", "Pct. Rural", pool_df$var)
-pool_df$var <- sub("republican_2016", "Pct. Trump Support", pool_df$var)
-pool_df$var <- sub("perc_rtail", "Pct. Employment in\nRetail", pool_df$var)
-pool_df$var <- sub("perc_trspt", "Pct. Employment in\nTransport.", pool_df$var)
-pool_df$var <- sub("perc_hlthc", "Pct. Employment in\nHealth, Education, Social", pool_df$var)
-pool_df$var <- sub("weekly_cases_per_mil", "Cases per Million\nin Past Week", pool_df$var)
-pool_df$var <- factor(pool_df$var, levels = c("Pct. Male", "Pct. Black", "Pct. Hispanic", "Pct. 65 Years or Older", "Pct. Foreign-Born", "Pct. with College Degree", "Per Capita Income", "Pct. Rural", "Pct. Trump Support", "Pct. Employment in\nRetail", "Pct. Employment in\nTransport.", "Pct. Employment in\nHealth, Education, Social", "Cases per Million\nin Past Week"))
+pool_df$var <- sub("perc_rural", "Rural, %", pool_df$var)
+pool_df$var <- sub("republican_2016", "Trump Support, %", pool_df$var)
+pool_df$var <- sub("perc_rtail", "Employed in\nRetail, %", pool_df$var)
+pool_df$var <- sub("perc_trspt", "Employed in\nTransportation, %", pool_df$var)
+pool_df$var <- sub("perc_hlthc", "Employed in\nHealth, Edu., Social, %", pool_df$var)
+pool_df$var <- sub("cases",      "Cases per Million\nin Past Week", pool_df$var)
+pool_df$var <- factor(pool_df$var, levels = c("Male, %", "Black, %", "Hispanic, %", "Age \u226565 Years, %", "Foreign-Born, %", "Per Capita Income", "Rural, %", "Trump Support, %", "Employed in\nRetail, %", "Employed in\nTransportation, %", "Employed in\nHealth, Edu., Social, %", "Cases per Million\nin Past Week"))
 
 # Graph rolling coefficients
 pool_plot <- ggplot(data=pool_df,
@@ -294,7 +294,6 @@ pool_plot <- ggplot(data=pool_df,
   facet_wrap(~var, nrow=3) +
   geom_hline(yintercept=0, linetype="dashed", color="red", size=0.5) +
   geom_errorbar(alpha=0.2) +
-  # geom_ribbon(alpha=0.2, color=NA) +
   geom_line(alpha=1) +
   theme_test() +
   theme(legend.position = "none",
@@ -315,7 +314,39 @@ pool_plot <- ggplot(data=pool_df,
   coord_cartesian(ylim = c(-5.5,8))
 
 # Print figure
-ggsave(plot=pool_plot, file="Pooled coefficients plot.pdf", width=7, height=6, units='in', dpi=600)
+ggsave(plot=pool_plot, file="Figure 3.pdf", width=7, height=6, units='in', dpi=600, device=cairo_pdf)
+
+##############################################################################
+# Graph: Distancing by day
+##############################################################################
+
+# Plot movement by day
+distance_plot <- ggplot(merged, aes(x=date, y=daily_distance_diff, group=date)) +
+  geom_rect(aes(xmin=as.Date("2020-02-10"), xmax=as.Date("2020-03-08"),
+                ymin=-Inf, ymax=Inf), fill='gray90') +
+  geom_boxplot(fill="grey", outlier.size=0, outlier.shape=NA, notch=T, size=0.25, outlier.alpha=0.5) +
+  geom_hline(yintercept=0, linetype="dashed", color="red", size=0.5) +
+  theme_test() +
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_text(face="bold"),
+        axis.text.x  = element_text(angle=0, hjust=0),
+        panel.grid.major.x = element_line(color="light gray", size=0.25),
+        panel.grid.major.y = element_line(color="light gray", size=0.25)) +
+  # xlab("Date") +
+  ylab("Change in Average Movement") +
+  scale_x_date(labels = date_format("%b"),
+               breaks = seq(as.Date("2020-03-01"), as.Date("2021-01-10"), by="month")) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  coord_cartesian(ylim = c(-1, 0.5),
+                  xlim = as.Date(c("2020-03-06", "2021-01-10"))) +
+  geom_vline(xintercept=as.Date('2020-03-13'), linetype="solid", color="black", size=0.5) +
+  annotate("text", x=as.Date('2020-03-16'), y=0.4, label="National emergency declared", fontface=2, size=3, hjust=0, vjust=0.5) +
+  annotate("text", x=as.Date('2020-02-21'), y=-0.75, label="Reference\nperiod", fontface=2, size=3, hjust=0, vjust=0.5) +
+  annotate("text", x=as.Date('2020-11-20'), y=0.4, label="Less physical distancing", fontface=2, size=3, hjust=0, vjust=0.5) +
+  annotate("text", x=as.Date('2020-11-20'), y=-0.75, label="More physical distancing", fontface=2, size=3, hjust=0, vjust=0.5)
+
+# Print figure
+ggsave(plot=distance_plot, file="Figure 1.pdf", width=11, height=3.5, units='in', dpi=600, device=cairo_pdf)
 
 ##############################################################################
 # Graph: Distancing by income/politics
@@ -340,20 +371,20 @@ merged %>%
 # Rename quintiles
 merged <- merged %>% mutate(
   income_cat = dplyr::recode(income_cat,
-                             "[1.09e+04,2.2e+04]"  = "Q1 ($10,931 - $21,963)",
-                             "(2.2e+04,2.47e+04]"  = "Q2 ($21,965 - $24,732)",
-                             "(2.47e+04,2.75e+04]" = "Q3 ($24,739 - $27,522)",
-                             "(2.75e+04,3.11e+04]" = "Q4 ($27,523 - $31,091)",
-                             "(3.11e+04,7.28e+04]" = "Q5 ($31,096 - $72,832)"
+                             "[1.09e+04,2.2e+04]"  = "Q1 ($10,931–$21,963)",
+                             "(2.2e+04,2.47e+04]"  = "Q2 ($21,965–$24,732)",
+                             "(2.47e+04,2.75e+04]" = "Q3 ($24,739–$27,522)",
+                             "(2.75e+04,3.11e+04]" = "Q4 ($27,523–$31,091)",
+                             "(3.11e+04,7.28e+04]" = "Q5 ($31,096–$72,832)"
   )
 )
 merged <- merged %>% mutate(
   trump_cat = dplyr::recode(trump_cat,
-                            "[0.0409,0.502]" = "Q1 (4.1% - 50.2%)",
-                            "(0.502,0.618]"  = "Q2 (50.2% - 61.8%)",
-                            "(0.618,0.697]"  = "Q3 (61.9% - 69.7%)",
-                            "(0.697,0.762]"  = "Q4 (69.8% - 76.2%)",
-                            "(0.762,0.916]"  = "Q5 (76.3% - 91.6%)"
+                            "[0.0409,0.502]" = "Q1 (4.1%–50.2%)",
+                            "(0.502,0.618]"  = "Q2 (50.2%–61.8%)",
+                            "(0.618,0.697]"  = "Q3 (61.9%–69.7%)",
+                            "(0.697,0.762]"  = "Q4 (69.8%–76.2%)",
+                            "(0.762,0.916]"  = "Q5 (76.3%–91.6%)"
   )
 )
 
@@ -429,39 +460,7 @@ trump_legend <- ggplot(subset(distance_df, !is.na(month)),
 quintile_plot <- plot_grid(income_plot, get_legend(income_legend), trump_plot, get_legend(trump_legend), labels = c("A.", "", "B.", ""), rel_widths = c(1,0.2), nrow = 2)
 
 # Print figure
-ggsave(plot=quintile_plot, file="Quintile plot.pdf", width=11, height=6, units='in', dpi=600)
-
-##############################################################################
-# Graph: Distancing by day
-##############################################################################
-
-# Plot movement by day
-distance_plot <- ggplot(merged, aes(x=date, y=daily_distance_diff, group=date)) +
-  geom_rect(aes(xmin=as.Date("2020-02-10"), xmax=as.Date("2020-03-08"),
-                ymin=-Inf, ymax=Inf), fill='gray90') +
-  geom_boxplot(fill="grey", outlier.size=0, outlier.shape=NA, notch=T, size=0.25, outlier.alpha=0.5) +
-  geom_hline(yintercept=0, linetype="dashed", color="red", size=0.5) +
-  theme_test() +
-  theme(axis.title.x = element_blank(),
-        axis.title.y = element_text(face="bold"),
-        axis.text.x  = element_text(angle=0, hjust=0),
-        panel.grid.major.x = element_line(color="light gray", size=0.25),
-        panel.grid.major.y = element_line(color="light gray", size=0.25)) +
-  # xlab("Date") +
-  ylab("Change in Average Movement") +
-  scale_x_date(labels = date_format("%b"),
-               breaks = seq(as.Date("2020-03-01"), as.Date("2021-01-10"), by="month")) +
-  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
-  coord_cartesian(ylim = c(-1, 0.5),
-                  xlim = as.Date(c("2020-03-06", "2021-01-10"))) +
-  geom_vline(xintercept=as.Date('2020-03-13'), linetype="solid", color="black", size=0.5) +
-  annotate("text", x=as.Date('2020-03-16'), y=0.4, label="National emergency declared", fontface=2, size=3, hjust=0, vjust=0.5) +
-  annotate("text", x=as.Date('2020-02-23'), y=-0.75, label="Reference\nperiod", fontface=2, size=3, hjust=0, vjust=0.5) +
-  annotate("text", x=as.Date('2020-11-20'), y=0.4, label="Less physical distancing", fontface=4, size=3, hjust=0, vjust=0.5) +
-  annotate("text", x=as.Date('2020-11-20'), y=-0.75, label="More physical distancing", fontface=4, size=3, hjust=0, vjust=0.5)
-
-# Print figure
-ggsave(plot=distance_plot, file="Distance plot.pdf", width=11, height=3.5, units='in', dpi=600)
+ggsave(plot=quintile_plot, file="Figure 2.pdf", width=11, height=6, units='in', dpi=600, device=cairo_pdf)
 
 ##############################################################################
 # Graph: Daily correlations between characteristics and distancing
@@ -470,17 +469,17 @@ ggsave(plot=distance_plot, file="Distance plot.pdf", width=11, height=3.5, units
 # Create dataframe of county-level characteristics
 merged_corr <- merged %>% 
   group_by(GEO_ID) %>%
-  summarise("Pct. Male"                 = mean(perc_male),
-            "Pct. Black"                = mean(perc_black),
-            "Pct. Hispanic"             = mean(perc_Hisp),
-            "Pct. 65 Years or Older"    = mean(elder),
-            "Pct. Foreign"              = mean(perc_forgn),
-            "Per Capita Income"         = mean(income),
-            "Pct. Rural"                = mean(perc_rural),
-            "Pct. Trump Support"        = mean(republican_2016),
-            "Pct. Emp. in Retail"       = mean(perc_rtail),
-            "Pct. Emp. in Transport."   = mean(perc_trspt),
-            "Pct. Emp. in Health, etc." = mean(perc_hlthc))
+  summarise("Male, %"                 = mean(perc_male),
+            "Black, %"                = mean(perc_black),
+            "Hispanic, %"             = mean(perc_Hisp),
+            "Age \u226565 Years, %"   = mean(elder),
+            "Foreign-Born, %"         = mean(perc_forgn),
+            "Per Capita Income"       = mean(income),
+            "Rural, %"                = mean(perc_rural),
+            "Trump Support, %"        = mean(republican_2016),
+            "Emp. in Retail, %"       = mean(perc_rtail),
+            "Emp. in Transport., %"   = mean(perc_trspt),
+            "Emp. in Health, etc., %" = mean(perc_hlthc))
 
 # Reformat date
 merged$date_short <- format(merged$date, "%m-%d")
@@ -511,7 +510,7 @@ corr_pval <- corr_pval[(ncol(corr_pval)-10):ncol(corr_pval), 1:(ncol(corr_pval)-
 col <- colorRampPalette(c("#4477AA", "#77AADD", "#FFFFFF", "#EE9988", "#BB4444"))
 
 # Prepare graphic for export
-pdf(file = "Correlation matrix by date.pdf")
+cairo_pdf(file = "Appendix Figure 2.pdf")
 
 # Plot correlation matrix
 corr_plot <- corrplot(corr_coef, method = "color", col = col(200), cl.pos = "r", cl.cex = 0.14,
@@ -539,17 +538,17 @@ dev.off()
 # Create dataframe of county-level characteristics
 merged_corr <- merged %>% 
   group_by(GEO_ID) %>%
-  summarise("Pct. Male"                 = mean(perc_male),
-            "Pct. Black"                = mean(perc_black),
-            "Pct. Hispanic"             = mean(perc_Hisp),
-            "Pct. 65 Years or Older"    = mean(elder),
-            "Pct. Foreign"              = mean(perc_forgn),
-            "Per Capita Income"         = mean(income),
-            "Pct. Rural"                = mean(perc_rural),
-            "Pct. Trump Support"        = mean(republican_2016),
-            "Pct. Emp. in Retail"       = mean(perc_rtail),
-            "Pct. Emp. in Transport."   = mean(perc_trspt),
-            "Pct. Emp. in Health, etc." = mean(perc_hlthc))
+  summarise("Male, %"                 = mean(perc_male),
+            "Black, %"                = mean(perc_black),
+            "Hispanic, %"             = mean(perc_Hisp),
+            "Age \u226565 Years, %"   = mean(elder),
+            "Foreign-Born, %"         = mean(perc_forgn),
+            "Per Capita Income"       = mean(income),
+            "Rural, %"                = mean(perc_rural),
+            "Trump Support, %"        = mean(republican_2016),
+            "Emp. in Retail, %"       = mean(perc_rtail),
+            "Emp. in Transport., %"   = mean(perc_trspt),
+            "Emp. in Health, etc., %" = mean(perc_hlthc))
 
 # Remove county ID
 merged_corr <- merged_corr %>% select(-GEO_ID)
@@ -565,7 +564,7 @@ corr_pval <- corr_matrix$P
 col <- colorRampPalette(c("#4477AA", "#77AADD", "#FFFFFF", "#EE9988", "#BB4444"))
 
 # Prepare graphic for export
-pdf(file = "Correlation matrix.pdf")
+cairo_pdf(file = "Appendix Figure 1.pdf")
 
 # Plot correlation matrix
 corr_plot <- corrplot(corr_coef, method = "color", col = col(200),
@@ -622,19 +621,19 @@ pool_df$lowerOR <- pool_df$beta - 1.96*pool_df$error
 pool_df$upperOR <- pool_df$beta + 1.96*pool_df$error
 
 # Rename variables
-pool_df$var <- sub("perc_male",  "Pct. Male", pool_df$var)
-pool_df$var <- sub("perc_black", "Pct. Black", pool_df$var)
-pool_df$var <- sub("perc_Hisp",  "Pct. Hispanic", pool_df$var)
-pool_df$var <- sub("elder",      "Pct. 65 Years or Older", pool_df$var)
-pool_df$var <- sub("perc_forgn", "Pct. Foreign-Born", pool_df$var)
+pool_df$var <- sub("perc_male",  "Male, %", pool_df$var)
+pool_df$var <- sub("perc_black", "Black, %", pool_df$var)
+pool_df$var <- sub("perc_Hisp",  "Hispanic, %", pool_df$var)
+pool_df$var <- sub("elder",      "Age \u226565 Years, %", pool_df$var)
+pool_df$var <- sub("perc_forgn", "Foreign-Born, %", pool_df$var)
 pool_df$var <- sub("income",     "Per Capita Income", pool_df$var)
-pool_df$var <- sub("perc_rural", "Pct. Rural", pool_df$var)
-pool_df$var <- sub("republican_2016", "Pct. Trump Support", pool_df$var)
-pool_df$var <- sub("perc_rtail", "Pct. Employment in\nRetail", pool_df$var)
-pool_df$var <- sub("perc_trspt", "Pct. Employment in\nTransport.", pool_df$var)
-pool_df$var <- sub("perc_hlthc", "Pct. Employment in\nHealth, Education, Social", pool_df$var)
-pool_df$var <- sub("weekly_cases_per_mil", "Cases per Million\nin Past Week", pool_df$var)
-pool_df$var <- factor(pool_df$var, levels = c("Pct. Male", "Pct. Black", "Pct. Hispanic", "Pct. 65 Years or Older", "Pct. Foreign-Born", "Pct. with College Degree", "Per Capita Income", "Pct. Rural", "Pct. Trump Support", "Pct. Employment in\nRetail", "Pct. Employment in\nTransport.", "Pct. Employment in\nHealth, Education, Social", "Cases per Million\nin Past Week"))
+pool_df$var <- sub("perc_rural", "Rural, %", pool_df$var)
+pool_df$var <- sub("republican_2016", "Trump Support, %", pool_df$var)
+pool_df$var <- sub("perc_rtail", "Employed in\nRetail, %", pool_df$var)
+pool_df$var <- sub("perc_trspt", "Employed in\nTransportation, %", pool_df$var)
+pool_df$var <- sub("perc_hlthc", "Employed in\nHealth, Edu., Social, %", pool_df$var)
+pool_df$var <- sub("cases",      "Cases per Million\nin Past Week", pool_df$var)
+pool_df$var <- factor(pool_df$var, levels = c("Male, %", "Black, %", "Hispanic, %", "Age \u226565 Years, %", "Foreign-Born, %", "Per Capita Income", "Rural, %", "Trump Support, %", "Employed in\nRetail, %", "Employed in\nTransportation, %", "Employed in\nHealth, Edu., Social, %", "Cases per Million\nin Past Week"))
 
 # Graph rolling coefficients
 pool_plot <- ggplot(data=pool_df,
@@ -662,7 +661,7 @@ pool_plot <- ggplot(data=pool_df,
   coord_cartesian(ylim = c(-5.5,8))
 
 # Print figure
-ggsave(plot=pool_plot, file="Pooled coefficients plot, state.pdf", width=7, height=6, units='in', dpi=600)
+ggsave(plot=pool_plot, file="Appendix Figure 4.pdf", width=7, height=6, units='in', dpi=600, device=cairo_pdf)
 
 ##############################################################################
 # Sensitivity analysis: Pooled regression with COVID-19 cases
@@ -703,19 +702,19 @@ pool_df$lowerOR <- pool_df$beta - 1.96*pool_df$error
 pool_df$upperOR <- pool_df$beta + 1.96*pool_df$error
 
 # Rename variables
-pool_df$var <- sub("perc_male",  "Pct. Male", pool_df$var)
-pool_df$var <- sub("perc_black", "Pct. Black", pool_df$var)
-pool_df$var <- sub("perc_Hisp",  "Pct. Hispanic", pool_df$var)
-pool_df$var <- sub("elder",      "Pct. 65 Years or Older", pool_df$var)
-pool_df$var <- sub("perc_forgn", "Pct. Foreign-Born", pool_df$var)
+pool_df$var <- sub("perc_male",  "Male, %", pool_df$var)
+pool_df$var <- sub("perc_black", "Black, %", pool_df$var)
+pool_df$var <- sub("perc_Hisp",  "Hispanic, %", pool_df$var)
+pool_df$var <- sub("elder",      "Age \u226565 Years, %", pool_df$var)
+pool_df$var <- sub("perc_forgn", "Foreign-Born, %", pool_df$var)
 pool_df$var <- sub("income",     "Per Capita Income", pool_df$var)
-pool_df$var <- sub("perc_rural", "Pct. Rural", pool_df$var)
-pool_df$var <- sub("republican_2016", "Pct. Trump Support", pool_df$var)
-pool_df$var <- sub("perc_rtail", "Pct. Employment in\nRetail", pool_df$var)
-pool_df$var <- sub("perc_trspt", "Pct. Employment in\nTransport.", pool_df$var)
-pool_df$var <- sub("perc_hlthc", "Pct. Employment in\nHealth, Education, Social", pool_df$var)
+pool_df$var <- sub("perc_rural", "Rural, %", pool_df$var)
+pool_df$var <- sub("republican_2016", "Trump Support, %", pool_df$var)
+pool_df$var <- sub("perc_rtail", "Employed in\nRetail, %", pool_df$var)
+pool_df$var <- sub("perc_trspt", "Employed in\nTransportation, %", pool_df$var)
+pool_df$var <- sub("perc_hlthc", "Employed in\nHealth, Edu., Social, %", pool_df$var)
 pool_df$var <- sub("cases",      "Cases per Million\nin Past Week", pool_df$var)
-pool_df$var <- factor(pool_df$var, levels = c("Pct. Male", "Pct. Black", "Pct. Hispanic", "Pct. 65 Years or Older", "Pct. Foreign-Born", "Pct. with College Degree", "Per Capita Income", "Pct. Rural", "Pct. Trump Support", "Pct. Employment in\nRetail", "Pct. Employment in\nTransport.", "Pct. Employment in\nHealth, Education, Social", "Cases per Million\nin Past Week"))
+pool_df$var <- factor(pool_df$var, levels = c("Male, %", "Black, %", "Hispanic, %", "Age \u226565 Years, %", "Foreign-Born, %", "Per Capita Income", "Rural, %", "Trump Support, %", "Employed in\nRetail, %", "Employed in\nTransportation, %", "Employed in\nHealth, Edu., Social, %", "Cases per Million\nin Past Week"))
 
 # Graph rolling coefficients
 pool_plot <- ggplot(data=pool_df,
@@ -723,7 +722,6 @@ pool_plot <- ggplot(data=pool_df,
   facet_wrap(~var, nrow=3) +
   geom_hline(yintercept=0, linetype="dashed", color="red", size=0.5) +
   geom_errorbar(alpha=0.2) +
-  # geom_ribbon(alpha=0.2, color=NA) +
   geom_line(alpha=1) +
   theme_test() +
   theme(legend.position = "none",
@@ -744,4 +742,4 @@ pool_plot <- ggplot(data=pool_df,
   coord_cartesian(ylim = c(-5.5,8))
 
 # Print figure
-ggsave(plot=pool_plot, file="Pooled coefficients plot, cases.pdf", width=7, height=6, units='in', dpi=600)
+ggsave(plot=pool_plot, file="Appendix Figure 3.pdf", width=7, height=6, units='in', dpi=600, device=cairo_pdf)
